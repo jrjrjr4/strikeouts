@@ -1,0 +1,396 @@
+# MLB Pitcher Strikeout Props - Configuration Template
+# Copy this file to config.yaml and fill in environment-specific values.
+# DO NOT commit config.yaml with secrets to version control.
+
+# =============================================================================
+# File Paths
+# =============================================================================
+paths:
+  # Base directory for all cached data (JSON/Parquet files from providers)
+  cache_dir: data/cache
+
+  # Directory for outputs (bets, results, logs, reports)
+  outputs_dir: data/outputs
+
+  # Directory for trained model artifacts (pickled models, scalers, metadata)
+  models_dir: data/models
+
+  # Directory for training data (Parquet files with features + labels)
+  training_dir: data/training
+
+# =============================================================================
+# Data Providers
+# =============================================================================
+providers:
+  # MLB Stats API (public, no authentication required)
+  mlb_stats:
+    # Base URL for MLB Stats API (configurable for testing with mock server)
+    base_url: "https://statsapi.mlb.com/api/v1"
+
+    # Request timeout in seconds
+    timeout_s: 8
+
+    # Maximum retries on transient errors (5xx, timeouts)
+    retries: 3
+
+    # Exponential backoff parameters
+    backoff_base_s: 1  # Initial delay: 1s, 2s, 4s, ...
+    backoff_max_s: 30  # Cap delay at 30s
+
+  # Statcast / pybaseball (Baseball Savant public data)
+  statcast:
+    # Use pybaseball library (true) or direct API calls (false)
+    use_pybaseball: true
+
+    # Request timeout (Baseball Savant can be slow)
+    timeout_s: 20
+
+    # Maximum retries
+    retries: 2
+
+    # Rate limit: max requests per minute (conservative; avoid 429s)
+    rate_limit_rpm: 30
+
+  # Odds API (e.g., TheOddsAPI or similar; requires API key)
+  odds:
+    # Base URL (configurable; swap providers easily)
+    base_url: "https://api.theoddsapi.com/v4"
+
+    # Environment variable name for API key (DO NOT hardcode key here)
+    # Set via: export ODDS_API_KEY="your_key_here"
+    api_key_env: "ODDS_API_KEY"
+
+    # Request timeout
+    timeout_s: 8
+
+    # Maximum retries
+    retries: 3
+
+    # Monthly quota (free tier default; adjust if paid)
+    quota_monthly: 500
+
+    # Alert when quota usage exceeds this percentage
+    quota_alert_pct: 80
+
+  # Umpire data (Phase 2; TBD provider)
+  umpire:
+    enabled: false  # Set to true when implementing Phase 2
+    base_url: "<TBD>"
+    timeout_s: 8
+    retries: 3
+
+  # Weather data (Phase 2; TBD provider, e.g., OpenWeatherMap)
+  weather:
+    enabled: false  # Set to true when implementing Phase 2
+    base_url: "<TBD>"
+    api_key_env: "WEATHER_API_KEY"
+    timeout_s: 8
+    retries: 3
+
+  # Polymarket (Phase 5+; optional)
+  polymarket:
+    enabled: false  # Set to true when implementing Phase 5+
+    base_url: "https://clob.polymarket.com"
+    api_key_env: "POLYMARKET_API_KEY"
+    timeout_s: 10
+    retries: 3
+
+# =============================================================================
+# Feature Engineering
+# =============================================================================
+features:
+  # Number of recent starts for rolling pitcher aggregates (K/9, CSW%, etc.)
+  recent_window_n: 5
+
+  # Fallback window if < recent_window_n starts available
+  fallback_window_n: 3
+
+  # Use lineup-weighted opponent features (Phase 1.5; requires confirmed lineups)
+  use_lineup_features: false  # Set to true in Phase 1.5
+
+  # Expected PA weights by batting order (1st through 9th)
+  # Source: Markov chain approximation; sum ≈ 39 PAs per game
+  expected_pa_weights: [4.8, 4.7, 4.6, 4.5, 4.4, 4.3, 4.1, 3.9, 3.7]
+
+  # Use umpire features (Phase 2)
+  use_umpire_features: false
+
+  # Use weather features (Phase 2)
+  use_weather_features: false
+
+# =============================================================================
+# Market Filters
+# =============================================================================
+market:
+  # Minimum available liquidity (dollars) before placing bet
+  # Skip bet if liquidity < this threshold (avoids slippage and partial fills)
+  min_liquidity: 1000
+
+  # Maximum spread (vig) in cents (5 = 5% = 0.05)
+  # Spread = (1/price_over + 1/price_under - 1)
+  # Skip bet if spread > this threshold
+  max_spread_cents: 5
+
+  # Minimum acceptable decimal odds (avoid very high-juice favorites)
+  # 1.4 decimal ≈ -250 American ≈ 71% implied probability
+  min_odds_decimal: 1.4
+
+  # Maximum acceptable slippage (price change between decision and execution)
+  # 0.02 = 2% worse odds tolerable; skip bet if slippage > this
+  slippage_tolerance_pct: 0.02
+
+# =============================================================================
+# Betting Policy
+# =============================================================================
+betting:
+  # Minimum expected value (EV) to place bet (0.03 = 3%)
+  # Provides cushion for model error, slippage, fees
+  ev_min: 0.03
+
+  # Fractional Kelly sizing parameter (0.2 = 20% of full Kelly)
+  # Lower λ → lower volatility but slower growth; higher λ → higher volatility
+  # Recommended range: 0.15–0.25
+  kelly_lambda: 0.2
+
+  # Maximum Kelly fraction per bet (hard cap; 0.02 = 2% of bankroll)
+  # Prevents over-betting on extreme outliers
+  kelly_max: 0.02
+
+  # Absolute maximum stake per bet (USD)
+  # Overrides Kelly if Kelly suggests larger stake
+  per_bet_cap_usd: 200
+
+  # Maximum total stakes per day/slate (USD)
+  # Limits correlated exposure across same-day games
+  per_slate_cap_usd: 1500
+
+  # Same-game correlation multiplier
+  # If betting on multiple pitchers in same game, max combined stake =
+  # per_bet_cap × same_game_multiplier
+  same_game_multiplier: 1.5
+
+  # Bankroll mode: "fixed" (do not adjust for wins/losses during season)
+  #                 or "dynamic" (update bankroll daily/weekly)
+  bankroll_mode: "fixed"
+
+  # Initial bankroll (USD; or current bankroll if dynamic mode)
+  bankroll_usd: 10000
+
+  # Enable/disable betting (manual kill-switch)
+  # Set to false to halt all betting immediately
+  enabled: true
+
+# =============================================================================
+# Risk Management
+# =============================================================================
+risk:
+  # Daily loss limit (percentage of bankroll; 5 = 5%)
+  # If cumulative loss today > this threshold, halt betting
+  daily_loss_limit_pct: 5
+
+  # Closing line value (CLV) threshold in basis points (negative = worse than closing)
+  # If rolling 3-day average CLV < this threshold, halt betting
+  stop_if_clv_below_bps: -20
+
+  # Number of consecutive days with negative CLV before triggering kill-switch
+  stop_if_consecutive_clv_losses: 3
+
+  # Maximum drawdown (percentage from peak; 10 = 10%)
+  # If drawdown > this threshold, halt betting and require manual review
+  drawdown_limit_pct: 10
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model:
+  # Model type: "logistic", "xgboost", "two_tower" (Phase 3)
+  model_type: "xgboost"
+
+  # Model version (semantic versioning; increment on retrain)
+  version: "1.0.0"
+
+  # Calibration method: "platt" (Platt scaling) or "isotonic" (isotonic regression)
+  # Platt recommended for logistic; isotonic for tree models
+  calibration_method: "isotonic"
+
+  # Hyperparameters (XGBoost example; adjust per model type)
+  hyperparams:
+    max_depth: 4
+    n_estimators: 200
+    learning_rate: 0.1
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1.0  # Computed from class imbalance during training
+
+  # Random seed for reproducibility
+  random_seed: 42
+
+  # Retrain cadence (days; 7 = retrain weekly)
+  retrain_cadence_days: 7
+
+  # Trigger retrain if Brier score increases by this factor (1.05 = 5% worse)
+  retrain_if_brier_degrades_by: 1.05
+
+# =============================================================================
+# Cache Configuration
+# =============================================================================
+cache:
+  # Maximum staleness (hours) before cache considered stale
+  # If cache older than this, attempt on-demand fetch
+  max_staleness_hours:
+    pitcher_windows: 24  # Nightly refresh; 24h tolerance
+    team_splits: 24
+    schedules: 6  # Game-day data; shorter TTL
+    probables: 6
+    odds: 2  # Odds change frequently
+    boxscores: 24
+
+  # Retention period (days) before deleting old cache files
+  retention_days: 60
+
+  # Cache format: "json" or "parquet" (parquet faster for large datasets)
+  format: "json"  # Use parquet in Phase 3 for feature store
+
+# =============================================================================
+# Logging & Monitoring
+# =============================================================================
+logging:
+  # Log level: "DEBUG", "INFO", "WARNING", "ERROR"
+  level: "INFO"
+
+  # Log format: "json" (structured) or "text" (human-readable)
+  format: "json"
+
+  # Log file path (empty string = stdout only)
+  file: "data/outputs/logs/app.log"
+
+  # Rotate log files daily (true) or append indefinitely (false)
+  rotate_daily: true
+
+monitoring:
+  # Enable Prometheus metrics export (requires prometheus_client library)
+  enable_prometheus: false
+
+  # Prometheus exporter port (if enabled)
+  prometheus_port: 9090
+
+  # Alerts configuration (Slack webhook, PagerDuty, etc.)
+  alerts:
+    # Slack webhook URL (set via environment variable for security)
+    slack_webhook_env: "SLACK_WEBHOOK_URL"
+
+    # PagerDuty integration key (for critical alerts)
+    pagerduty_key_env: "PAGERDUTY_INTEGRATION_KEY"
+
+    # Enable email alerts (requires SMTP config below)
+    enable_email: false
+
+  # SMTP configuration for email alerts (if enable_email: true)
+  smtp:
+    host: "smtp.gmail.com"
+    port: 587
+    username_env: "SMTP_USERNAME"
+    password_env: "SMTP_PASSWORD"
+    from_address: "alerts@example.com"
+    to_addresses: ["you@example.com"]
+
+# =============================================================================
+# Execution Schedule (for cron or Airflow)
+# =============================================================================
+schedule:
+  # Nightly ETL (HH:MM in local time; 00:30 = 12:30 AM)
+  nightly_etl: "00:30"
+
+  # Game-day checkpoints (hours before first pitch)
+  gameday_t_minus_6h: 6
+  gameday_t_minus_90m: 1.5
+  gameday_t_minus_30m: 0.5
+
+  # Post-game reconciliation delay (hours after game end)
+  postgame_delay_hours: 2
+
+# =============================================================================
+# Experimentation (A/B Testing)
+# =============================================================================
+experiments:
+  # Enable A/B testing framework
+  enabled: false
+
+  # Current experiment: "baseline" (no experiment) or experiment name
+  current_experiment: "baseline"
+
+  # Assignment method: "hash" (deterministic based on game_pk) or "random"
+  assignment_method: "hash"
+
+  # Treatment assignment ratio (0.5 = 50% control, 50% treatment)
+  treatment_ratio: 0.5
+
+# =============================================================================
+# Database (Phase 3+; optional SQLite/PostgreSQL for feature store)
+# =============================================================================
+database:
+  # Enable database storage (false = use file-based cache only)
+  enabled: false
+
+  # Database type: "sqlite" or "postgres"
+  db_type: "sqlite"
+
+  # SQLite file path (if db_type: sqlite)
+  sqlite_path: "data/strikeouts.db"
+
+  # PostgreSQL connection (if db_type: postgres)
+  postgres:
+    host: "localhost"
+    port: 5432
+    database: "strikeouts"
+    username_env: "POSTGRES_USER"
+    password_env: "POSTGRES_PASSWORD"
+
+# =============================================================================
+# Advanced Features (Phase 2+)
+# =============================================================================
+advanced:
+  # Uncertainty quantification (ensemble for prediction intervals)
+  uncertainty:
+    enabled: false  # Phase 2
+    ensemble_size: 10  # Number of bootstrap models
+    uncertainty_threshold: 0.05  # Flag if std(p_over) > this
+
+  # Two-tower model (Phase 3)
+  two_tower:
+    enabled: false
+    pitcher_embed_dim: 16
+    opponent_embed_dim: 16
+    hidden_layers: [32]
+    dropout: 0.2
+
+  # Contextual bandit (Phase 4)
+  bandit:
+    enabled: false
+    algorithm: "thompson_sampling"  # or "linucb"
+    exploration_epsilon: 0.1  # ε-greedy exploration
+
+  # Polymarket module (Phase 5+)
+  polymarket_module:
+    enabled: false
+    arbitrage_threshold_bps: 100  # Min spread for arb (1% = 100 bps)
+    max_polymarket_stake_usd: 100  # Cap per Polymarket bet
+
+# =============================================================================
+# Notes
+# =============================================================================
+# 1. Environment variables for secrets (API keys, SMTP passwords):
+#    - Set via: export VAR_NAME="value"
+#    - DO NOT hardcode secrets in this file
+#    - Use .env file locally (add to .gitignore)
+#
+# 2. Adjust thresholds (ev_min, kelly_lambda, caps) based on:
+#    - Model calibration (lower ev_min if Brier < 0.21)
+#    - Risk tolerance (higher kelly_lambda if comfortable with volatility)
+#    - Bankroll size (higher caps if bankroll > $20k)
+#
+# 3. Enable advanced features (lineup, umpire, weather, two-tower, bandit)
+#    only after validating prerequisites (see ROADMAP.md).
+#
+# 4. Monitor logs and alerts daily; adjust config based on performance.

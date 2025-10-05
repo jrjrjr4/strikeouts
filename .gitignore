@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data & Cache (DO NOT commit data files)
+data/cache/
+data/outputs/
+data/models/
+data/training/
+*.db
+*.sqlite
+*.parquet
+*.csv
+
+# Config files with secrets (commit CONFIG_TEMPLATE.yaml only)
+config.yaml
+.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# API keys and credentials
+*.key
+*.pem
+credentials.json
+secrets/
